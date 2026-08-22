@@ -1132,7 +1132,7 @@ elif menu == "🔍  Filter & Analisis":
                 stratify=y_enc
             )
 
-            tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=2, max_df=0.95)
+            tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=1, max_df=0.95)
             X_train = tfidf.fit_transform(X_train_t)
             X_test  = tfidf.transform(X_test_t)
 
