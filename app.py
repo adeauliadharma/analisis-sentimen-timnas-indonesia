@@ -1200,25 +1200,40 @@ elif menu == "🔍  Filter & Analisis":
                 try:
                     X_train = tfidf.fit_transform(X_train_t)
                 except ValueError:
-                    # Vocabulary TETAP kosong bahkan di min_df=1 → bukan soal threshold,
-                    # tapi teksnya memang tidak punya token valid sama sekali.
-                    # Tampilkan diagnosa lengkap dan hentikan dengan rapi (bukan crash).
-                    st.error(
-                        "❌ Tidak bisa membentuk TF-IDF vocabulary sama sekali — "
-                        "dokumen training tidak mengandung kata yang valid (bukan cuma "
-                        "soal min_df). Ini kemungkinan besar bug di tahap sebelumnya "
-                        "(parsing `tokens_ready` atau preprocessing menghasilkan teks kosong)."
+                    # Kalau data difilter pakai keyword (mis. "timnas", "indonesia"),
+                    # hampir semua dokumen akan mengandung kata itu — bisa bikin
+                    # term itu muncul di >95% dokumen dan kebuang oleh max_df=0.95.
+                    # Kalau itu satu-satunya term yang tersisa, vocabulary jadi kosong
+                    # meski min_df sudah 1. Coba sekali lagi tanpa batas max_df.
+                    st.warning(
+                        "⚠️ Vocabulary masih kosong di min_df=1 — kemungkinan kata kunci "
+                        "filter (mis. 'timnas'/'indonesia') muncul di hampir semua dokumen "
+                        "dan kebuang oleh max_df=0.95. Mencoba lagi tanpa batas max_df."
                     )
-                    with st.expander("🔍 Detail data training (untuk debugging)", expanded=True):
-                        st.write("Jumlah dokumen training:", len(X_train_t))
-                        st.write("Contoh isi final_text (10 pertama):")
-                        st.dataframe(X_train_t.head(10).to_frame('final_text'))
-                        panjang = X_train_t.str.len()
-                        st.write(
-                            f"Panjang karakter — min: {panjang.min()}, "
-                            f"max: {panjang.max()}, rata-rata: {panjang.mean():.1f}"
+                    tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=1, max_df=1.0)
+                    try:
+                        X_train = tfidf.fit_transform(X_train_t)
+                    except ValueError:
+                        # Vocabulary TETAP kosong bahkan tanpa batas min_df/max_df →
+                        # dokumennya benar-benar tidak punya token 2+ huruf sama sekali.
+                        # Tampilkan diagnosa lengkap dan hentikan dengan rapi (bukan crash).
+                        st.error(
+                            "❌ Tidak bisa membentuk TF-IDF vocabulary sama sekali — "
+                            "dokumen training tidak mengandung kata yang valid (bukan cuma "
+                            "soal min_df/max_df). Ini kemungkinan besar bug di tahap "
+                            "sebelumnya (parsing `tokens_ready` atau preprocessing "
+                            "menghasilkan teks kosong)."
                         )
-                    st.stop()
+                        with st.expander("🔍 Detail data training (untuk debugging)", expanded=True):
+                            st.write("Jumlah dokumen training:", len(X_train_t))
+                            st.write("Contoh isi final_text (10 pertama):")
+                            st.dataframe(X_train_t.head(10).to_frame('final_text'))
+                            panjang = X_train_t.str.len()
+                            st.write(
+                                f"Panjang karakter — min: {panjang.min()}, "
+                                f"max: {panjang.max()}, rata-rata: {panjang.mean():.1f}"
+                            )
+                        st.stop()
 
             X_test  = tfidf.transform(X_test_t)
 
