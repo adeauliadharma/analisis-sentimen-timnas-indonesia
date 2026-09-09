@@ -997,11 +997,30 @@ elif menu == "🔍  Filter & Analisis":
                 def safe_literal_eval(val):
                     if isinstance(val, list):
                         return val
-                    try:
-                        return ast.literal_eval(str(val))
-                    except Exception:
+                    if pd.isna(val):
                         return []
+                    s = str(val).strip()
+                    try:
+                        parsed = ast.literal_eval(s)
+                        if isinstance(parsed, list):
+                            return parsed
+                        return [str(parsed)]
+                    except Exception:
+                        # Bukan representasi list Python yang valid (mis. CSV menyimpan
+                        # tokens_ready sebagai teks biasa dipisah spasi). Jangan buang
+                        # datanya jadi [] — fallback ke split spasi biar tidak silent
+                        # dan menyebabkan final_text kosong tanpa terdeteksi.
+                        return s.split() if s else []
                 df_proc['tokens_ready'] = df_proc['tokens_ready'].apply(safe_literal_eval)
+
+                # Diagnostik: kalau MASIH banyak yang jadi list kosong, tampilkan ke user
+                n_empty = (df_proc['tokens_ready'].apply(len) == 0).sum()
+                if n_empty > 0:
+                    st.warning(
+                        f"⚠️ {n_empty} dari {len(df_proc)} baris punya `tokens_ready` "
+                        f"kosong setelah parsing. Cek format kolom `tokens_ready` di file CSV kamu — "
+                        f"seharusnya berupa list Python, mis. `['main','bola']`."
+                    )
             progress.progress(50)
 
             # Handle negation & final text (sama dengan Colab)
@@ -1132,6 +1151,16 @@ elif menu == "🔍  Filter & Analisis":
                 stratify=y_enc
             )
 
+            # Diagnostik SEBELUM TF-IDF: kalau X_train_t ternyata kosong/spasi doang,
+            # kasih tahu user persis di mana masalahnya, jangan tunggu sklearn crash.
+            n_blank_train = (X_train_t.str.strip() == '').sum()
+            if n_blank_train > 0:
+                st.warning(
+                    f"⚠️ {n_blank_train} dari {len(X_train_t)} dokumen training kosong "
+                    f"(final_text = '' setelah strip). Ini menandakan ada masalah di "
+                    f"tahap sebelumnya (parsing tokens_ready / preprocessing)."
+                )
+
             # min_df=2 bisa bikin vocabulary kosong kalau data training sedikit/pendek
             # (umum terjadi di dataset kecil setelah stopword removal + stemming).
             # Fallback otomatis ke min_df=1 kalau itu terjadi, sambil kasih tahu user.
@@ -1144,7 +1173,28 @@ elif menu == "🔍  Filter & Analisis":
                     "otomatis menggunakan min_df=1."
                 )
                 tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=1, max_df=0.95)
-                X_train = tfidf.fit_transform(X_train_t)
+                try:
+                    X_train = tfidf.fit_transform(X_train_t)
+                except ValueError:
+                    # Vocabulary TETAP kosong bahkan di min_df=1 → bukan soal threshold,
+                    # tapi teksnya memang tidak punya token valid sama sekali.
+                    # Tampilkan diagnosa lengkap dan hentikan dengan rapi (bukan crash).
+                    st.error(
+                        "❌ Tidak bisa membentuk TF-IDF vocabulary sama sekali — "
+                        "dokumen training tidak mengandung kata yang valid (bukan cuma "
+                        "soal min_df). Ini kemungkinan besar bug di tahap sebelumnya "
+                        "(parsing `tokens_ready` atau preprocessing menghasilkan teks kosong)."
+                    )
+                    with st.expander("🔍 Detail data training (untuk debugging)", expanded=True):
+                        st.write("Jumlah dokumen training:", len(X_train_t))
+                        st.write("Contoh isi final_text (10 pertama):")
+                        st.dataframe(X_train_t.head(10).to_frame('final_text'))
+                        panjang = X_train_t.str.len()
+                        st.write(
+                            f"Panjang karakter — min: {panjang.min()}, "
+                            f"max: {panjang.max()}, rata-rata: {panjang.mean():.1f}"
+                        )
+                    st.stop()
 
             X_test  = tfidf.transform(X_test_t)
 
