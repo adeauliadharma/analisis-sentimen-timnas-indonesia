@@ -1021,6 +1021,30 @@ elif menu == "🔍  Filter & Analisis":
                         f"kosong setelah parsing. Cek format kolom `tokens_ready` di file CSV kamu — "
                         f"seharusnya berupa list Python, mis. `['main','bola']`."
                     )
+
+                # Deteksi bug umum: tokens_ready ternyata list PER-KARAKTER
+                # (mis. hasil `list(teks)` bukan `teks.split()` saat export dari Colab).
+                # Contoh: ['m','a','i','n',' ','b','o','l','a'] alih-alih ['main','bola'].
+                # Kalau dibiarkan, semua "kata" cuma 1 karakter → TF-IDF vocabulary kosong.
+                def fix_char_level_tokens(tokens):
+                    if not tokens:
+                        return tokens
+                    if all(len(t) <= 1 for t in tokens):
+                        reconstructed = ''.join(tokens)
+                        return reconstructed.split()
+                    return tokens
+
+                n_char_level = df_proc['tokens_ready'].apply(
+                    lambda tl: bool(tl) and all(len(t) <= 1 for t in tl)
+                ).sum()
+                if n_char_level > 0:
+                    st.warning(
+                        f"⚠️ Terdeteksi {n_char_level} dari {len(df_proc)} baris `tokens_ready` "
+                        f"berupa list PER-KARAKTER (mis. ['m','a','i','n']), bukan per-kata — "
+                        f"kemungkinan bug saat export dari Colab (`list(teks)` alih-alih "
+                        f"`teks.split()`). Otomatis direkonstruksi jadi kata utuh."
+                    )
+                    df_proc['tokens_ready'] = df_proc['tokens_ready'].apply(fix_char_level_tokens)
             progress.progress(50)
 
             # Handle negation & final text (sama dengan Colab)
