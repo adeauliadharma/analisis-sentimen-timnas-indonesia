@@ -996,21 +996,40 @@ elif menu == "🔍  Filter & Analisis":
             if df_proc['tokens_ready'].dtype == object:
                 def safe_literal_eval(val):
                     if isinstance(val, list):
-                        return val
+                        return [str(x).strip() for x in val if str(x).strip()]
                     if pd.isna(val):
                         return []
                     s = str(val).strip()
+                    if not s:
+                        return []
+
+                    # 1) Coba parse sebagai list Python yang valid (kasus normal)
                     try:
                         parsed = ast.literal_eval(s)
-                        if isinstance(parsed, list):
-                            return parsed
-                        return [str(parsed)]
+                        if isinstance(parsed, (list, tuple, set)):
+                            return [str(x).strip() for x in parsed if str(x).strip()]
+                        return [str(parsed)] if str(parsed).strip() else []
                     except Exception:
-                        # Bukan representasi list Python yang valid (mis. CSV menyimpan
-                        # tokens_ready sebagai teks biasa dipisah spasi). Jangan buang
-                        # datanya jadi [] — fallback ke split spasi biar tidak silent
-                        # dan menyebabkan final_text kosong tanpa terdeteksi.
-                        return s.split() if s else []
+                        pass
+
+                    # 2) Fallback: kelihatan seperti representasi list ("['kata1','kata2']")
+                    #    tapi gagal di-parse ast.literal_eval — paling sering karena
+                    #    tanda kutipnya "smart quotes" (' ' " ") bukan kutip lurus,
+                    #    umum terjadi kalau CSV pernah dibuka/diedit di Excel/Google
+                    #    Sheets/Word. Bersihkan manual: buang bracket, split per koma,
+                    #    lucuti tanda kutip APAPUN jenisnya dari tiap item.
+                    inner = s
+                    if inner.startswith('[') and inner.endswith(']'):
+                        inner = inner[1:-1]
+                    if ',' in inner:
+                        quote_chars = "'\"\u2018\u2019\u201c\u201d"
+                        items = [tok.strip().strip(quote_chars).strip() for tok in inner.split(',')]
+                        items = [tok for tok in items if tok]
+                        if items:
+                            return items
+
+                    # 3) Bukan format list sama sekali → anggap teks biasa dipisah spasi
+                    return s.split()
                 df_proc['tokens_ready'] = df_proc['tokens_ready'].apply(safe_literal_eval)
 
                 # Diagnostik: kalau MASIH banyak yang jadi list kosong, tampilkan ke user
