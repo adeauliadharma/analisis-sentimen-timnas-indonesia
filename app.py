@@ -1132,8 +1132,20 @@ elif menu == "🔍  Filter & Analisis":
                 stratify=y_enc
             )
 
-            tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=1, max_df=0.95)
-            X_train = tfidf.fit_transform(X_train_t)
+            # min_df=2 bisa bikin vocabulary kosong kalau data training sedikit/pendek
+            # (umum terjadi di dataset kecil setelah stopword removal + stemming).
+            # Fallback otomatis ke min_df=1 kalau itu terjadi, sambil kasih tahu user.
+            tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=2, max_df=0.95)
+            try:
+                X_train = tfidf.fit_transform(X_train_t)
+            except ValueError:
+                st.warning(
+                    "⚠️ Data training terlalu sedikit/pendek untuk min_df=2 — "
+                    "otomatis menggunakan min_df=1."
+                )
+                tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1,2), min_df=1, max_df=0.95)
+                X_train = tfidf.fit_transform(X_train_t)
+
             X_test  = tfidf.transform(X_test_t)
 
             svm_model = LinearSVC(C=2.5, class_weight='balanced', max_iter=5000)
@@ -1154,6 +1166,12 @@ elif menu == "🔍  Filter & Analisis":
                 'train_size': len(X_train_t),
                 'test_size' : len(X_test_t),
             }
+        else:
+            st.error(
+                f"❌ Data tidak cukup untuk training model. "
+                f"Jumlah data valid: {len(df_model)} (minimal 10), "
+                f"jumlah kelas polarity: {df_model['polarity'].nunique()} (minimal 2)."
+            )
 
         progress.progress(100)
         status.empty()
